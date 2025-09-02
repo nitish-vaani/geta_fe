@@ -170,3 +170,19 @@
     padding: 0.3rem 0.6rem;
   }
 }
+
+.confidence-info-box {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
+    color: #6c757d;
+    line-height: 1.4;
+}
+
+.confidence-info-box strong {
+    font-size: 0.95rem;
+    color: #495057;
+}

@@ -9,6 +9,7 @@
 // import { pagePaths } from '../../common/constants';
 // import { MoonLoader, ScaleLoader } from 'react-spinners';
 // import ConversationEval from '../../components/conversation-eval';
+// import EntityExtraction from '../../components/entity-extraction';
 // import { Button } from 'primereact/button';
 // import { InputText } from 'primereact/inputtext';
 // import { Calendar } from 'primereact/calendar';
@@ -20,7 +21,9 @@
 
 // interface CallRecord {
 //     id?: string;
-//     name: string;
+//     Name: {
+//         name: string;
+//     };
 //     End_time: string;
 //     duration_ms: string;
 //     direction: string;
@@ -28,8 +31,7 @@
 //     to_number: string;
 //     call_status: string;
 //     recording_api: string;
-//     transcript: string;
-//     summary: string;
+//     call_type: string;
 //     [key: string]: any;
 // }
 
@@ -54,6 +56,7 @@
 //     const [sideBarData, setSideBarData] = useState<any>();
 //     const [detailsLoading, setDetailsLoading] = useState<boolean>(false);
 //     const [conversationEval, setConversationEval] = useState<any>(null);
+//     const [entityData, setEntityData] = useState<any>(null);
     
 //     // Filter states
 //     const [selectedRecords, setSelectedRecords] = useState<CallRecord[]>([]);
@@ -149,7 +152,7 @@
 //         // Text search filter
 //         if (searchText) {
 //             filtered = filtered.filter(record => 
-//                 record.name?.toLowerCase().includes(searchText.toLowerCase()) ||
+//                 record.Name?.name?.toLowerCase().includes(searchText.toLowerCase()) ||
 //                 record.from_number?.includes(searchText) ||
 //                 record.to_number?.includes(searchText)
 //             );
@@ -206,14 +209,18 @@
 //         } else {
 //             setLoading(true);
 //             getCallHistory(user_id).then(data => {
-//                 const res = data.data.map(({Name, ...d}: { Name: { name: any; }; duration_ms: number; End_time: number; }, index: number) => ({
-//                     ...d,
+//                 // Updated mapping to match the new API response structure
+//                 const res = data.data.map((record: CallRecord, index: number) => ({
+//                     ...record,
 //                     id: `call_${index}`, // Add unique ID for selection
-//                     name: Name.name,
-//                     duration_ms: formatDurationMillis(d.duration_ms),
-//                     End_time: dateTime(d.End_time)
+//                     name: record.Name?.name || 'Unknown', // Extract name from Name object
+//                     duration_ms: formatDurationMillis(Number(record.duration_ms) || 0),
+//                     End_time: dateTime(Number(record.End_time) || Date.now())
 //                 }));
 //                 setList(res);
+//             }).catch((error) => {
+//                 console.error("Error fetching call history:", error);
+//                 show("Error fetching call history");
 //             }).finally(() => {
 //                 setLoading(false);
 //             });
@@ -221,15 +228,14 @@
 //     }, []);
 
 //     const open = async (rowData: any) => {
-//         // Set sidebar data with available information - ALWAYS show transcript/summary
+//         // Set sidebar data with available information
 //         setSideBarData({
-//             recording_api: rowData.recording_api, 
-//             transcript: rowData.transcript, 
-//             summary: rowData.summary
+//             recording_api: rowData.recording_api
 //         });
         
 //         // Reset states
 //         setConversationEval(null);
+//         setEntityData(null);
 //         setAudioError(null);
 //         setAudioSrc(undefined);
 //         setVisible(true);
@@ -242,7 +248,7 @@
 //             console.log("Extracted conversation ID:", conversationId);
 //         }
         
-//         // ALWAYS fetch call details regardless of audio availability
+//         // Fetch call details to get transcript, summary, eval, and entity data
 //         if (conversationId) {
 //             try {
 //                 const user_id = localStorage.getItem("fullName");
@@ -250,33 +256,80 @@
 //                     setDetailsLoading(true);
 //                     const response = await getCallDetails(user_id, conversationId);
                     
+//                     console.log("API Response:", response.data); // Debug log
+                    
 //                     if (response.status <= 299 && response.data) {
-//                         // Process conversation eval data
-//                         if (response.data.conversation_eval) {
-//                             setConversationEval(response.data.conversation_eval);
+//                         const callDetails = response.data;
+                        
+//                         // Process conversation eval data - wrap in result object
+//                         if (callDetails.conversation_eval) {
+//                             console.log("Setting conversation eval:", callDetails.conversation_eval);
+//                             setConversationEval({ result: callDetails.conversation_eval });
 //                         } else {
 //                             setConversationEval(null);
 //                         }
                         
-//                         // Update sidebar data with fresh transcript/summary if available
-//                         // setSideBarData(prev => ({
-//                         //     ...prev,
-//                         //     transcript: response.data.transcription || prev.transcript,
-//                         //     summary: response.data.summary || prev.summary
-//                         // }));
+//                         // Process entity data - transform to expected format
+//                         if (callDetails.entity) {
+//                             console.log("Setting entity data:", callDetails.entity);
+//                             const transformedEntity: any = {};
+//                             Object.keys(callDetails.entity).forEach(key => {
+//                                 const entityValue = callDetails.entity[key];
+//                                 if (typeof entityValue === 'object' && entityValue !== null) {
+//                                     // For nested objects like lead_info, create a formatted display with line breaks
+//                                     const formattedEntries = Object.entries(entityValue).map(([nestedKey, nestedValue]) => {
+//                                         // Format the key to be more readable
+//                                         const readableKey = nestedKey
+//                                             .replace(/_/g, ' ')
+//                                             .replace(/\b\w/g, l => l.toUpperCase());
+//                                         return `${readableKey}: ${nestedValue}`;
+//                                     });
+                                    
+//                                     transformedEntity[key] = {
+//                                         value: formattedEntries.join('\n'),
+//                                         text: "Extracted from conversation",
+//                                         confidence: "high"
+//                                     };
+//                                 } else {
+//                                     // For simple values
+//                                     transformedEntity[key] = {
+//                                         value: String(entityValue),
+//                                         text: "Extracted from conversation", 
+//                                         confidence: "high"
+//                                     };
+//                                 }
+//                             });
+//                             setEntityData(transformedEntity);
+//                         } else {
+//                             setEntityData(null);
+//                         }
+                        
+//                         // Update sidebar data with transcript and summary
 //                         setSideBarData((prev: any) => ({
-//                         ...prev,
-//                         transcript: response.data.transcription || prev?.transcript,
-//                         summary: response.data.summary || prev?.summary
-//                     }));
+//                             ...prev,
+//                             transcript: callDetails.transcript || "Transcript not available",
+//                             summary: callDetails.summary || "Summary not available"
+//                         }));
 //                     } else {
 //                         setConversationEval(null);
+//                         setEntityData(null);
+//                         setSideBarData((prev: any) => ({
+//                             ...prev,
+//                             transcript: "Transcript not available",
+//                             summary: "Summary not available"
+//                         }));
 //                     }
 //                 }
 //             } catch (error) {
 //                 console.error("Error fetching call details:", error);
-//                 show("Error fetching conversation evaluation", "info");
+//                 show("Error fetching call details", "info");
 //                 setConversationEval(null);
+//                 setEntityData(null);
+//                 setSideBarData((prev: any) => ({
+//                     ...prev,
+//                     transcript: "Error loading transcript",
+//                     summary: "Error loading summary"
+//                 }));
 //             } finally {
 //                 setDetailsLoading(false);
 //             }
@@ -308,12 +361,12 @@
 //     };
 
 //     // Convert data to CSV format
-//     const convertToCSV = (data: CallRecord[]) => {
+//     const convertToCSV = (data: any[]) => {
 //         const headers = ['Name', 'Time', 'Duration', 'Type', 'From', 'To', 'Call Status'];
 //         const csvContent = [
 //             headers.join(','),
 //             ...data.map(record => [
-//                 `"${record.name || ''}"`,
+//                 `"${record.name || record.Name?.name || ''}"`,
 //                 `"${record.End_time || ''}"`,
 //                 `"${record.duration_ms || ''}"`,
 //                 `"${record.direction || ''}"`,
@@ -528,29 +581,35 @@
 //                         )}
 //                     </div>
                     
-//                     {/* Transcript Section - ALWAYS shows */}
-//                     <div className='transcript'>
-//                         <h3>Transcript</h3>
-//                         <p>
-//                             <pre>{sideBarData?.transcript || "Transcript not available"}</pre>  
-//                         </p>
-//                     </div>
-                    
-//                     {/* Summary Section - ALWAYS shows */}
-//                     <div className='summary'>
-//                         <h3>Summary</h3>
-//                         <p>
-//                             {sideBarData?.summary || "Summary not available"}
-//                         </p>
-//                     </div>
-                    
-//                     {/* Conversation Evaluation - ALWAYS shows */}
+//                     {/* Content loads after API call */}
 //                     {detailsLoading ? (
 //                         <div className="details-loading">
 //                             <ScaleLoader height={20} width={2} radius={5} margin={2} color="#979797" />
 //                         </div>
 //                     ) : (
-//                         <ConversationEval evalData={conversationEval} />
+//                         <>
+//                             {/* Transcript Section */}
+//                             <div className='transcript'>
+//                                 <h3>Transcript</h3>
+//                                 <p>
+//                                     <pre>{sideBarData?.transcript || "Loading transcript..."}</pre>  
+//                                 </p>
+//                             </div>
+                            
+//                             {/* Summary Section */}
+//                             <div className='summary'>
+//                                 <h3>Summary</h3>
+//                                 <p>
+//                                     {sideBarData?.summary || "Loading summary..."}
+//                                 </p>
+//                             </div>
+                            
+//                             {/* Conversation Evaluation */}
+//                             <ConversationEval evalData={conversationEval} />
+                            
+//                             {/* Entity Extraction */}
+//                             <EntityExtraction entities={entityData} />
+//                         </>
 //                     )}
 //                 </div>
 //             </Sidebar>
@@ -565,7 +624,6 @@
 // };
 
 // export default History;
-
 
 
 import { DataTable, DataTableSelectionMultipleChangeEvent } from 'primereact/datatable';
@@ -591,7 +649,9 @@ interface HistoryProps {
 
 interface CallRecord {
     id?: string;
-    name: string;
+    Name: {
+        name: string;
+    };
     End_time: string;
     duration_ms: string;
     direction: string;
@@ -599,16 +659,8 @@ interface CallRecord {
     to_number: string;
     call_status: string;
     recording_api: string;
-    transcript: string;
-    summary: string;
+    call_type: string;
     [key: string]: any;
-}
-
-interface CallDetailsResponse {
-    transcription: string;
-    entity: any;
-    conversation_eval: any;
-    summary: string;
 }
 
 const History: React.FC<HistoryProps> = () => {
@@ -728,7 +780,7 @@ const History: React.FC<HistoryProps> = () => {
         // Text search filter
         if (searchText) {
             filtered = filtered.filter(record => 
-                record.name?.toLowerCase().includes(searchText.toLowerCase()) ||
+                record.Name?.name?.toLowerCase().includes(searchText.toLowerCase()) ||
                 record.from_number?.includes(searchText) ||
                 record.to_number?.includes(searchText)
             );
@@ -785,14 +837,18 @@ const History: React.FC<HistoryProps> = () => {
         } else {
             setLoading(true);
             getCallHistory(user_id).then(data => {
-                const res = data.data.map(({Name, ...d}: { Name: { name: any; }; duration_ms: number; End_time: number; }, index: number) => ({
-                    ...d,
+                // Updated mapping to match the new API response structure
+                const res = data.data.map((record: CallRecord, index: number) => ({
+                    ...record,
                     id: `call_${index}`, // Add unique ID for selection
-                    name: Name.name,
-                    duration_ms: formatDurationMillis(d.duration_ms),
-                    End_time: dateTime(d.End_time)
+                    name: record.Name?.name || 'Unknown', // Extract name from Name object
+                    duration_ms: formatDurationMillis(Number(record.duration_ms) || 0),
+                    End_time: dateTime(Number(record.End_time) || Date.now())
                 }));
                 setList(res);
+            }).catch((error) => {
+                console.error("Error fetching call history:", error);
+                show("Error fetching call history");
             }).finally(() => {
                 setLoading(false);
             });
@@ -800,11 +856,9 @@ const History: React.FC<HistoryProps> = () => {
     }, []);
 
     const open = async (rowData: any) => {
-        // Set sidebar data with available information - ALWAYS show transcript/summary
+        // Set sidebar data with available information
         setSideBarData({
-            recording_api: rowData.recording_api, 
-            transcript: rowData.transcript, 
-            summary: rowData.summary
+            recording_api: rowData.recording_api
         });
         
         // Reset states
@@ -822,7 +876,7 @@ const History: React.FC<HistoryProps> = () => {
             console.log("Extracted conversation ID:", conversationId);
         }
         
-        // ALWAYS fetch call details regardless of audio availability
+        // Fetch call details to get transcript, summary, eval, and entity data
         if (conversationId) {
             try {
                 const user_id = localStorage.getItem("fullName");
@@ -830,32 +884,98 @@ const History: React.FC<HistoryProps> = () => {
                     setDetailsLoading(true);
                     const response = await getCallDetails(user_id, conversationId);
                     
+                    console.log("API Response:", response.data); // Debug log
+                    
                     if (response.status <= 299 && response.data) {
-                        const callDetails: CallDetailsResponse = response.data;
+                        const callDetails = response.data;
                         
-                        // Process conversation eval data
-                        if (callDetails.conversation_eval) {
-                            setConversationEval(callDetails.conversation_eval);
+                        // Process conversation eval data - check if it exists and has content
+                        if (callDetails.conversation_eval && 
+                            typeof callDetails.conversation_eval === 'object' && 
+                            Object.keys(callDetails.conversation_eval).length > 0) {
+                            console.log("Setting conversation eval:", callDetails.conversation_eval);
+                            setConversationEval({ result: callDetails.conversation_eval });
                         } else {
                             setConversationEval(null);
                         }
                         
-                        // Process entity data
-                        if (callDetails.entity) {
-                            setEntityData(callDetails.entity);
+                        // Process entity data - check if it exists and has content
+                        if (callDetails.entity && 
+                            typeof callDetails.entity === 'object' && 
+                            Object.keys(callDetails.entity).length > 0) {
+                            console.log("Setting entity data:", callDetails.entity);
+                            const transformedEntity: any = {};
+                            Object.keys(callDetails.entity).forEach(key => {
+                                const entityValue = callDetails.entity[key];
+                                if (typeof entityValue === 'object' && entityValue !== null) {
+                                    // For nested objects like lead_info, create individual entries for better readability
+                                    Object.entries(entityValue).forEach(([nestedKey, nestedValue]) => {
+                                        // Format the key to be more readable
+                                        const readableKey = nestedKey
+                                            .replace(/_/g, ' ')
+                                            .replace(/\b\w/g, l => l.toUpperCase());
+                                        
+                                        // Determine confidence level based on value
+                                        let confidence = "high";
+                                        if (nestedKey.includes('confidence') && typeof nestedValue === 'number') {
+                                            if (nestedValue >= 0.9) {
+                                                confidence = "high";
+                                            } else if (nestedValue >= 0.75) {
+                                                confidence = "medium";
+                                            } else {
+                                                confidence = "low";
+                                            }
+                                        }
+                                        
+                                        // Special handling for lead_strength colors
+                                        if (nestedKey === 'lead_strength') {
+                                            if (nestedValue === 'junk') {
+                                                confidence = "low"; // Will show as red
+                                            } else if (nestedValue === 'callback') {
+                                                confidence = "medium"; // Will show as yellow
+                                            } else if (nestedValue === 'warm') {
+                                                confidence = "high"; // Will show as green
+                                            }
+                                        }
+                                        
+                                        // Create separate entry for each nested property
+                                        transformedEntity[readableKey] = {
+                                            value: String(nestedValue),
+                                            text: "", // Remove the "From transcript" line
+                                            confidence: confidence
+                                        };
+                                    });
+                                } else {
+                                    // For simple values
+                                    const readableKey = key
+                                        .replace(/_/g, ' ')
+                                        .replace(/\b\w/g, l => l.toUpperCase());
+                                    transformedEntity[readableKey] = {
+                                        value: String(entityValue),
+                                        text: "", // Remove the "From transcript" line
+                                        confidence: "high"
+                                    };
+                                }
+                            });
+                            setEntityData(transformedEntity);
                         } else {
                             setEntityData(null);
                         }
                         
-                        // Update sidebar data with fresh transcript/summary if available
+                        // Update sidebar data with transcript and summary
                         setSideBarData((prev: any) => ({
                             ...prev,
-                            transcript: callDetails.transcription || prev?.transcript,
-                            summary: callDetails.summary || prev?.summary
+                            transcript: callDetails.transcript || "Transcript not available",
+                            summary: callDetails.summary || "Summary not available"
                         }));
                     } else {
                         setConversationEval(null);
                         setEntityData(null);
+                        setSideBarData((prev: any) => ({
+                            ...prev,
+                            transcript: "Transcript not available",
+                            summary: "Summary not available"
+                        }));
                     }
                 }
             } catch (error) {
@@ -863,6 +983,11 @@ const History: React.FC<HistoryProps> = () => {
                 show("Error fetching call details", "info");
                 setConversationEval(null);
                 setEntityData(null);
+                setSideBarData((prev: any) => ({
+                    ...prev,
+                    transcript: "Error loading transcript",
+                    summary: "Error loading summary"
+                }));
             } finally {
                 setDetailsLoading(false);
             }
@@ -894,12 +1019,12 @@ const History: React.FC<HistoryProps> = () => {
     };
 
     // Convert data to CSV format
-    const convertToCSV = (data: CallRecord[]) => {
+    const convertToCSV = (data: any[]) => {
         const headers = ['Name', 'Time', 'Duration', 'Type', 'From', 'To', 'Call Status'];
         const csvContent = [
             headers.join(','),
             ...data.map(record => [
-                `"${record.name || ''}"`,
+                `"${record.name || record.Name?.name || ''}"`,
                 `"${record.End_time || ''}"`,
                 `"${record.duration_ms || ''}"`,
                 `"${record.direction || ''}"`,
@@ -1090,7 +1215,7 @@ const History: React.FC<HistoryProps> = () => {
                 position='right'
                 className='sidebar'
             > 
-                <h2>Recording/Transcript</h2>
+                <h2>Call Details</h2>
                 <div className='sidebar-text'>
                     {/* Audio Section - with graceful error handling */}
                     <div className='audio-section'>
@@ -1114,38 +1239,35 @@ const History: React.FC<HistoryProps> = () => {
                         )}
                     </div>
                     
-                    {/* Transcript Section - ALWAYS shows */}
-                    <div className='transcript'>
-                        <h3>Transcript</h3>
-                        <p>
-                            <pre>{sideBarData?.transcript || "Transcript not available"}</pre>  
-                        </p>
-                    </div>
-                    
-                    {/* Summary Section - ALWAYS shows */}
-                    <div className='summary'>
-                        <h3>Summary</h3>
-                        <p>
-                            {sideBarData?.summary || "Summary not available"}
-                        </p>
-                    </div>
-                    
-                    {/* Conversation Evaluation - ALWAYS shows */}
+                    {/* Content loads after API call */}
                     {detailsLoading ? (
                         <div className="details-loading">
                             <ScaleLoader height={20} width={2} radius={5} margin={2} color="#979797" />
                         </div>
                     ) : (
-                        <ConversationEval evalData={conversationEval} />
-                    )}
-                    
-                    {/* Entity Extraction - NEW SECTION */}
-                    {detailsLoading ? (
-                        <div className="details-loading">
-                            <ScaleLoader height={20} width={2} radius={5} margin={2} color="#979797" />
-                        </div>
-                    ) : (
-                        <EntityExtraction entities={entityData} />
+                        <>
+                            {/* Transcript Section */}
+                            <div className='transcript'>
+                                <h3>Transcript</h3>
+                                <p>
+                                    <pre>{sideBarData?.transcript || "Loading transcript..."}</pre>  
+                                </p>
+                            </div>
+                            
+                            {/* Summary Section */}
+                            <div className='summary'>
+                                <h3>Summary</h3>
+                                <p>
+                                    {sideBarData?.summary || "Loading summary..."}
+                                </p>
+                            </div>
+                            
+                            {/* Conversation Evaluation */}
+                            <ConversationEval evalData={conversationEval} />
+                            
+                            {/* Entity Extraction */}
+                            <EntityExtraction entities={entityData} />
+                        </>
                     )}
                 </div>
             </Sidebar>

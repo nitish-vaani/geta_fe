@@ -750,3 +750,11 @@
         font-size: 1.6rem;
     }
 }
+
+.entity-value {
+    font-size: 1.3rem;
+    margin-bottom: 0.8rem;
+    color: #2196F3;
+    font-weight: 600;
+    white-space: pre-line; /* This line preserves line breaks */
+}
